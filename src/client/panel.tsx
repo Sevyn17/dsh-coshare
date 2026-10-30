@@ -20,6 +20,7 @@ export function remoteNotice(mount: string): string {
 }
 
 const RESTART_HINT = '电脑上的 dsh-coshare 已更新但 DSH 还没重启。请完全退出电脑上的 DSH（包括托盘图标）再重新打开，然后刷新本页。';
+const LAST_DEVICE_KEY = 'dsh-coshare.lastDevice';
 const TIMEOUT_HINT = '连接超时。如果刚更新过插件，请完全退出并重新打开电脑上的 DSH。';
 
 function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; name: string; nonce: number; visible: boolean }): React.JSX.Element {
@@ -125,15 +126,29 @@ export function SharePanel(): React.JSX.Element {
     setCurrent(deviceId);
     setOpened((o) => (o.includes(deviceId) ? o : [...o, deviceId]));
     setMenu(false);
+    try {
+      localStorage.setItem(LAST_DEVICE_KEY, deviceId);
+    } catch {
+      /* 存储不可用时不记忆 */
+    }
   };
 
-  // 默认打开第一个设备；设备被删除后清掉对应页面
+  // 默认打开上次查看的设备（记在浏览器本地），不在列表里则打开第一个；设备被删除后清掉对应页面
   useEffect(() => {
     if (!state) return;
     const ids = devices.map((d) => d.deviceId);
     setOpened((o) => o.filter((id) => ids.includes(id)));
     if (current && !ids.includes(current)) setCurrent(undefined);
-    if (!current && ids[0]) open(ids[0]);
+    if (!current || !ids.includes(current)) {
+      let last: string | null = null;
+      try {
+        last = localStorage.getItem(LAST_DEVICE_KEY);
+      } catch {
+        /* 忽略 */
+      }
+      const pick = last && ids.includes(last) ? last : ids[0];
+      if (pick) open(pick);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
