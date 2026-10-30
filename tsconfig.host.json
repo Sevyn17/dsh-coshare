@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src/host",
+    "outDir": "lib/host",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/host/**/*.ts"
+  ]
+}

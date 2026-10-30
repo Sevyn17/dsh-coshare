@@ -1,0 +1,78 @@
+{
+  "name": "dsh-coshare",
+  "version": "0.1.0",
+  "description": "Pair DeepSeek Harness instances over LAN (TLS-PSK) and open another device's full DSH inside your own. 局域网配对多台 DSH，在自己的 DSH 里直接使用对方的完整界面。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "remote",
+    "lan",
+    "share",
+    "collaboration"
+  ],
+  "license": "Apache-2.0",
+  "author": "Sevyn17",
+  "homepage": "https://github.com/Sevyn17/dsh-coshare#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sevyn17/dsh-coshare.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Sevyn17/dsh-coshare/issues"
+  },
+  "type": "module",
+  "main": "./lib/host/index.js",
+  "types": "./lib/host/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/host/index.d.ts",
+      "default": "./lib/host/index.js"
+    },
+    "./client": {
+      "default": "./lib/client/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "immediately": true
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.host.json && node scripts/build-client.mjs",
+    "test": "node --test --test-reporter=spec --import tsx/esm \"tests/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.host.json --noEmit"
+  },
+  "engines": {
+    "node": ">=24.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "esbuild": "^0.28.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5"
+  }
+}

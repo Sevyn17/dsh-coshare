@@ -1,0 +1,16 @@
+refer/
+node_modules/
+
+.test-home/
+node_modules/
+lib/
+*.log
+*.tsbuildinfo
+.shot/
+
+.test-home*/
+.shot/
+.tmp/
+
+.devkit/
+dist/
