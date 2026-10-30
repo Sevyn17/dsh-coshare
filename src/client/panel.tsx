@@ -19,6 +19,39 @@ export function remoteNotice(mount: string): string {
   return `正在经电脑主端口访问对方设备（如手机经 dsh-mobile）。若页面打开后不实时更新：在电脑上打开 dsh-mobile「诊断」页，在「第三方 WebSocket 路径」里点「全部允许」，然后刷新本页。也可展开「手动添加路径（高级）」照抄这两条（已是本设备的完整路径）：${mount}api/remote.mux 和 ${mount}sidebar/ws/agent-opens。`;
 }
 
+const TIP_HIDDEN_KEY = 'dsh-coshare.remoteTipHidden';
+
+/** 手机访问提示：默认一行小字，点开看完整步骤，可关闭（记在浏览器本地）。 */
+function RemoteTip({ mount }: { mount: string }): React.JSX.Element | null {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(TIP_HIDDEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [open, setOpen] = useState(false);
+  if (hidden) return null;
+  const close = (): void => {
+    try {
+      localStorage.setItem(TIP_HIDDEN_KEY, '1');
+    } catch {
+      /* 存不了就只关本次 */
+    }
+    setHidden(true);
+  };
+  return (
+    <div className="dsh-share-hint" style={{ padding: '2px 10px', fontSize: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <span style={{ flex: 1, cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
+        {open ? `▾ ${remoteNotice(mount)}` : '▸ 手机访问：页面不更新时点这里查看说明'}
+      </span>
+      <span style={{ cursor: 'pointer' }} title="不再显示" onClick={close}>
+        ✕
+      </span>
+    </div>
+  );
+}
+
 const RESTART_HINT = '电脑上的 dsh-coshare 已更新但 DSH 还没重启。请完全退出电脑上的 DSH（包括托盘图标）再重新打开，然后刷新本页。';
 const LAST_DEVICE_KEY = 'dsh-coshare.lastDevice';
 const TIMEOUT_HINT = '连接超时。如果刚更新过插件，请完全退出并重新打开电脑上的 DSH。';
@@ -64,11 +97,7 @@ function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; nam
         </div>
       ) : src ? (
         <>
-          {!local && (
-            <div className="dsh-share-hint" style={{ padding: '4px 10px', fontSize: 12 }}>
-              {remoteNotice(`/dsh-coshare/peer/${deviceId}/`)}
-            </div>
-          )}
+          {!local && <RemoteTip mount={`/dsh-coshare/peer/${deviceId}/`} />}
           <iframe key={src} className="dsh-share-frame" src={src} title={name} allow="clipboard-read; clipboard-write" />
         </>
       ) : (

@@ -44,6 +44,29 @@ function eq(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+/** 子路径首页（只有首页需要注入脚本）。 */
+function isIndexPath(path: string): boolean {
+  const p = path.split('?')[0] ?? '/';
+  return p === '/' || p === '/index.html';
+}
+
+/**
+ * 手机经 dsh-mobile 访问时，它要求同源 POST 带 CSRF 头（x-dsh-mobile-csrf = Cookie dsh_ma_csrf 的值）。
+ * dsh-mobile 只给自己的主页面注入了这段逻辑，内嵌的对方页面没有，会被 403。
+ * 这里按同样规则给对方首页补上：没有该 Cookie（电脑本机打开）时什么都不做。
+ * 依赖 dsh-mobile 的 Cookie/头名（refer/dsh-mobile/src/http-security.ts:7-8），对方改名需同步。
+ */
+const MOBILE_CSRF_SCRIPT = `<script>(()=>{const H='x-dsh-mobile-csrf',N=['__Host-dsh_ma_csrf=','dsh_ma_csrf='];const f=window.fetch.bind(window);window.fetch=(input,init)=>{const src=input instanceof Request?input:undefined;const m=String(init?.method??src?.method??'GET').toUpperCase();if(m==='GET'||m==='HEAD')return f(input,init);const raw=typeof input==='string'?input:input instanceof URL?input.href:src?.url;if(raw===undefined||new URL(raw,location.href).origin!==location.origin)return f(input,init);const h=new Headers(init?.headers??src?.headers);if(!h.has(H)){const v=[...new Set(document.cookie.split(';').map(s=>s.trim()).flatMap(s=>N.filter(n=>s.startsWith(n)).map(n=>s.slice(n.length))))];if(v.length===1)h.set(H,v[0])}return f(input,{...init,headers:h})}})();</script>`;
+
+function injectHead(html: string): string {
+  const base = html.indexOf('<base href="./">');
+  if (base >= 0) {
+    const at = base + '<base href="./">'.length;
+    return html.slice(0, at) + MOBILE_CSRF_SCRIPT + html.slice(at);
+  }
+  return html.replace(/<head[^>]*>/i, (m) => m + MOBILE_CSRF_SCRIPT);
+}
+
 /** 原始 URL 去掉 A 侧 path 后剩下的就是挂载前缀。 */
 function mountOf(req: http.IncomingMessage, path: string): string {
   const url = req.url ?? '/';
@@ -101,11 +124,29 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
     }
     const headers = forwardRequestHeaders(req.headers, false);
     headers.host = `${ep.host}:${ep.port}`;
+    // 子路径首页要注入脚本：让对方不压缩，便于改写
+    const inject = mount !== '' && req.method === 'GET' && isIndexPath(path);
+    if (inject) delete headers['accept-encoding'];
     const up = https.request({ host: ep.host, port: ep.port, method: req.method, path, headers, agent }, (upRes) => {
       preferred = idx;
       const out = forwardResponseHeaders(upRes.headers, true);
       // 子路径挂载：A 返回的绝对跳转（Location: /x）要加上挂载前缀
       if (mount && typeof out.location === 'string' && out.location.startsWith('/') && !out.location.startsWith('//')) out.location = mount + out.location;
+      const html = /text\/html/i.test(String(upRes.headers['content-type'] ?? ''));
+      if (inject && html && !upRes.headers['content-encoding'] && upRes.statusCode === 200) {
+        const chunks: Buffer[] = [];
+        upRes.on('data', (c: Buffer) => chunks.push(c));
+        upRes.on('end', () => {
+          const body = Buffer.from(injectHead(Buffer.concat(chunks).toString('utf8')), 'utf8');
+          delete out['content-length'];
+          delete out['transfer-encoding'];
+          out['content-length'] = body.length;
+          res.writeHead(200, out);
+          res.end(body);
+        });
+        upRes.on('error', () => res.destroy());
+        return;
+      }
       res.writeHead(upRes.statusCode ?? 502, out);
       upRes.pipe(res);
     });
