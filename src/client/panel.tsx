@@ -19,6 +19,9 @@ export function remoteNotice(mount: string): string {
   return `正在经电脑主端口访问对方设备（如手机经 dsh-mobile）。若页面打开后不实时更新：在电脑上打开 dsh-mobile「诊断」页，在「第三方 WebSocket 路径」里点「全部允许」，然后刷新本页。也可展开「手动添加路径（高级）」照抄这两条（已是本设备的完整路径）：${mount}api/remote.mux 和 ${mount}sidebar/ws/agent-opens。`;
 }
 
+const RESTART_HINT = '电脑上的 dsh-coshare 已更新但 DSH 还没重启。请完全退出电脑上的 DSH（包括托盘图标）再重新打开，然后刷新本页。';
+const TIMEOUT_HINT = '连接超时。如果刚更新过插件，请完全退出并重新打开电脑上的 DSH。';
+
 function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; name: string; nonce: number; visible: boolean }): React.JSX.Element {
   const [src, setSrc] = useState<string | undefined>(undefined);
   const [err, setErr] = useState('');
@@ -28,13 +31,25 @@ function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; nam
     let alive = true;
     setSrc(undefined);
     setErr('');
-    shareCall<{ url: string; port: number; mount: string }>('outgoing.open', { deviceId }).then(
+    // 兜底：15 秒还没拿到地址也给出提示（拿到结果后清掉）
+    const timer = setTimeout(() => alive && setErr(TIMEOUT_HINT), 15000);
+    shareCall<{ url: string; port: number; mount?: string }>('outgoing.open', { deviceId }).then(
       // 本机：走 127 代理端口；非本机（手机经 dsh-mobile）：走本机主端口子路径，相对地址随页面同源
-      (r) => alive && setSrc(local ? r.url : `${r.mount.slice(1)}?n=${nonce}`),
-      (e) => alive && setErr(errorText(e)),
+      (r) => {
+        clearTimeout(timer);
+        if (!alive) return;
+        // 宿主端还是旧版（装了新插件但 DSH 没重启）时不返回 mount：直接提示重启，不要卡在「正在连接」
+        if (!local && typeof r.mount !== 'string') return setErr(RESTART_HINT);
+        setSrc(local || !r.mount ? r.url : `${r.mount.slice(1)}?n=${nonce}`);
+      },
+      (e) => {
+        clearTimeout(timer);
+        if (alive) setErr(errorText(e));
+      },
     );
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
   }, [deviceId, nonce, retry, local]);
   return (
