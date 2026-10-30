@@ -380,8 +380,9 @@ export class ShareService {
     const dev = this.store.state.outgoing.find((d) => d.deviceId === deviceId);
     const key = this.store.keys.outgoing[deviceId];
     if (notify && dev && key !== undefined) {
-      // 尽量通知对方删掉密钥；失败不阻塞本地删除
-      await callControl(dev.endpoints, DEVICE_PREFIX + deviceId, Buffer.from(key, 'base64url'), 'unpair', {}).catch(() => undefined);
+      // 后台尽量通知对方删掉密钥，不等待：对方 IP 变了时逐个地址超时会让界面卡很久。
+      // 通知不到也安全：本机密钥马上删除，对方再也连不进来。
+      void callControl(dev.endpoints, DEVICE_PREFIX + deviceId, Buffer.from(key, 'base64url'), 'unpair', {}).catch(() => undefined);
     }
     delete this.store.keys.outgoing[deviceId];
     this.store.state.outgoing = this.store.state.outgoing.filter((d) => d.deviceId !== deviceId);
