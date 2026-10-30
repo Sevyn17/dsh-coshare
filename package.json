@@ -1,6 +1,6 @@
 {
   "name": "dsh-coshare",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pair DeepSeek Harness instances over LAN (TLS-PSK) and open another device's full DSH inside your own. 局域网配对多台 DSH，在自己的 DSH 里直接使用对方的完整界面。",
   "keywords": [
     "dsh",
