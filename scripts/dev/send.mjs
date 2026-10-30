@@ -1,11 +1,11 @@
 // 实测：B 调 outgoing.open → 顶层打开代理 → 在 A 的原版页面发消息 → 等回复。
-// node scripts/d18-send.mjs <B带token的URL> <deviceId> <marker> [out.png]
+// node scripts/dev/send.mjs <B带token的URL> <deviceId> <marker> [out.png]
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const [bUrl, deviceId, marker, out = '.shot/d18/send.png'] = process.argv.slice(2);
+const [bUrl, deviceId, marker, out = '.shot/send.png'] = process.argv.slice(2);
 const chrome = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find((p) => existsSync(p));
 const port = 9700 + Math.floor(Math.random() * 100);
 const dir = mkdtempSync(join(tmpdir(), 'shot-'));

@@ -1,11 +1,11 @@
 // 诊断：B 页面里调 outgoing.open 拿票据，然后顶层打开代理地址，收集控制台错误与失败请求。
-// node scripts/d18-direct.mjs <B带token的URL> <deviceId> [out.png]
+// node scripts/dev/direct.mjs <B带token的URL> <deviceId> [out.png]
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const [bUrl, deviceId, out = '.shot/d18/direct.png'] = process.argv.slice(2);
+const [bUrl, deviceId, out = '.shot/direct.png'] = process.argv.slice(2);
 const chrome = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find((p) => existsSync(p));
 const port = 9800 + Math.floor(Math.random() * 100);
 const dir = mkdtempSync(join(tmpdir(), 'shot-'));

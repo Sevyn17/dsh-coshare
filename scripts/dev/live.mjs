@@ -1,8 +1,8 @@
-// 两测试实例实测（只连 3211/3212）：node scripts/d18-live.mjs <A_URL> <B_URL>
+// 两测试实例实测（只连 3211/3212）：node scripts/dev/live.mjs <A_URL> <B_URL>
 import http from 'node:http';
 
 const [aUrl, bUrl] = process.argv.slice(2);
-if (!aUrl || !bUrl) throw new Error('usage: d18-live.mjs <A_URL with token> <B_URL with token>');
+if (!aUrl || !bUrl) throw new Error('usage: scripts/dev/live.mjs <A_URL with token> <B_URL with token>');
 
 function req(url, { method = 'GET', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {

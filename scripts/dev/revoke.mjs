@@ -1,4 +1,4 @@
-// 撤销实测：node scripts/d18-revoke.mjs <A带token的URL> <B带token的URL> <deviceId>
+// 撤销实测：node scripts/dev/revoke.mjs <A带token的URL> <B带token的URL> <deviceId>
 // A 撤销 B 后：B 已进入的代理会话访问失败、B ping 离线。
 const [aUrl, bUrl, deviceId] = process.argv.slice(2);
 async function login(u) {

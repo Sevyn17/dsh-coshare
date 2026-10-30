@@ -1,16 +1,17 @@
-refer/
-node_modules/
-
-.test-home/
+# 依赖与构建产物
 node_modules/
 lib/
-*.log
+dist/
 *.tsbuildinfo
-.shot/
+*.log
 
+# 参考源码（单独克隆）
+refer/
+
+# 本地测试与调试
 .test-home*/
 .shot/
 .tmp/
 
+# 内部流程文档（不入库）
 .devkit/
-dist/

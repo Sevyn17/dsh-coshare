@@ -7,10 +7,11 @@
 ## 功能
 
 - **原版界面**：内嵌的就是对方 DSH 的原版页面，包括对方装的其他插件。
-- **多设备切换**：顶栏下拉切换已配对的设备，切换时页面保留不重载。
+- **多设备切换**：顶栏下拉切换已配对的设备，切换时页面保留不重载；下次进入自动打开上次查看的设备。
 - **逐台确认**：对方用邀请码发起请求，你看到 6 位校验码与对方一致后才点「允许」。
 - **加密传输**：局域网内走 TLS-PSK（TLS 1.2，ECDHE-PSK），不需要证书，不依赖外部服务。
 - **随时撤销**：撤销后对方的连接立即断开；也可以一键暂停所有访问。
+- **手机访问**：手机经 [dsh-mobile](https://github.com/saya-ch/dsh-mobile) 连到 B 后，也能在协作共享里打开 A（见下文）。
 
 ## 安装
 
@@ -20,15 +21,23 @@
 
 在 [Releases](https://github.com/Sevyn17/dsh-coshare/releases) 下载 `dsh-coshare-<版本>.tgz`。
 
-- **桌面版**：打开 **插件** 页面，在安装框里填 tgz 文件的完整路径（例如 `C:\Downloads\dsh-coshare-0.1.0.tgz`），安装并启用，然后重启 DSH。
+- **桌面版**：打开 **插件** 页面，在安装框里填 tgz 文件的完整路径（例如 `C:\Downloads\dsh-coshare-0.1.1.tgz`），安装并启用，然后**完全退出 DSH（包括托盘图标）再重新打开**。只关窗口插件不会生效。
 - **命令行**：
 
   ```sh
-  dsh plugin --profile web add C:/Downloads/dsh-coshare-0.1.0.tgz
+  dsh plugin --profile web add C:/Downloads/dsh-coshare-0.1.1.tgz
   dsh --profile web
   ```
 
 两台电脑都要安装。
+
+### 升级
+
+1. 卸载旧版：`dsh plugin --profile <配置> remove dsh-coshare`（桌面版配置名是 `desktop`），或在插件页面卸载。
+2. 按上面的方式安装新包。
+3. 完全退出 DSH（包括托盘图标）再重新打开。
+
+配对数据保存在 `~/.dsh/dsh-coshare/`，卸载插件不会丢。
 
 ### 从 npm 安装（发布后）
 
@@ -46,6 +55,17 @@ dsh plugin --profile web add dsh-coshare
 
 > 允许即授予对方这台电脑的完全控制权（执行命令、改文件、审批），只配对你信任的设备。
 
+### 用手机访问（经 dsh-mobile）
+
+手机通过 dsh-mobile 连到 B，在 B 的协作共享里打开 A。A 的页面经 B 的主端口子路径 `/dsh-coshare/peer/<设备ID>/` 转发，不会出现 127.0.0.1 地址。
+
+dsh-mobile 默认只放行它认识的 WebSocket 路径，每台被访问的设备需要放行 2 条：
+
+1. 在手机上打开一次该设备，让请求被拦截记录下来。
+2. 在 B 的 dsh-mobile **诊断** 页 → **第三方 WebSocket 路径**，点 **全部允许**。也可以在「手动添加路径（高级）」里填写，路径中的设备 ID 必须是真实的 12 位 ID，协作共享页面顶部的说明里已经写好。
+
+dsh-mobile 最多放行 16 条路径，也就是最多 8 台设备。
+
 ## 配置
 
 一般不用改。插件配置页可调：
@@ -58,11 +78,18 @@ dsh plugin --profile web add dsh-coshare
 | `advertiseHosts` | 空 | 写进邀请码的地址；空 = 自动取本机局域网网卡 |
 | `inviteTtlMinutes` | `10` | 邀请码有效期（1–60 分钟） |
 
+## 常见问题
+
+- **一直显示「正在连接」，或提示 DSH 还没重启**：装或升级插件后没有完全退出 DSH。退出（包括托盘图标）再打开。
+- **对方电脑 IP 变了，连不上**：删除该设备后重新配对。目前还不能自动更新地址。
+- **手机上提示「dsh-mobile 版本有变化」**：dsh-mobile 的安全校验规则变了，请更新 dsh-coshare。
+- **手机上页面不更新、会话列表为空**：检查 dsh-mobile 是否放行了 WebSocket 路径（见「用手机访问」）。
+- **Windows 防火墙弹窗**：允许 DSH 接受专用（局域网）网络连接。
+
 ## 限制
 
-- 只支持局域网，暂不支持外网访问。
-- 手机经 dsh-mobile 访问 B 时看不到 A。
-- Windows 防火墙首次可能弹窗询问，需允许 DSH 接受局域网连接。
+- 只支持局域网；外网访问需借助 dsh-mobile 的远程通道连到 B。
+- 手机访问依赖 dsh-mobile 的 CSRF 规则，对方改版后可能需要更新本插件。
 
 ## 开发
 
@@ -72,6 +99,8 @@ npm run build      # 输出 lib/
 npm test
 npm pack           # 生成 dsh-coshare-<版本>.tgz
 ```
+
+`scripts/redeploy.sh` 把插件装进隔离的测试实例；`scripts/dev/` 是开发用的诊断与回归脚本，用法写在各文件开头。
 
 ## 许可证
 
