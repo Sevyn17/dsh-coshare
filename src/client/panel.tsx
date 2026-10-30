@@ -55,12 +55,25 @@ function RemoteTip({ mount }: { mount: string }): React.JSX.Element | null {
 const RESTART_HINT = '电脑上的 dsh-coshare 已更新但 DSH 还没重启。请完全退出电脑上的 DSH（包括托盘图标）再重新打开，然后刷新本页。';
 const LAST_DEVICE_KEY = 'dsh-coshare.lastDevice';
 const TIMEOUT_HINT = '连接超时。如果刚更新过插件，请完全退出并重新打开电脑上的 DSH。';
+/** 与 src/host/proxy.ts CSRF_FAILED_MESSAGE 一致（两边分别打包，不能直接 import）。 */
+const CSRF_FAILED_MESSAGE = 'dsh-coshare:mobile-csrf-failed';
+const CSRF_HINT = '手机上的操作被 dsh-mobile 拒绝（CSRF 校验失败），可能是 dsh-mobile 版本有变化，请更新 dsh-coshare。';
 
 function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; name: string; nonce: number; visible: boolean }): React.JSX.Element {
   const [src, setSrc] = useState<string | undefined>(undefined);
   const [err, setErr] = useState('');
   const [retry, setRetry] = useState(0);
   const local = isLocalPage();
+  const [csrfBroken, setCsrfBroken] = useState(false);
+  useEffect(() => {
+    if (local) return;
+    const onMsg = (e: MessageEvent): void => {
+      const d = e.data as { type?: unknown } | null;
+      if (e.origin === location.origin && d?.type === CSRF_FAILED_MESSAGE) setCsrfBroken(true);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [local]);
   useEffect(() => {
     let alive = true;
     setSrc(undefined);
@@ -97,6 +110,7 @@ function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; nam
         </div>
       ) : src ? (
         <>
+          {!local && csrfBroken && <div className="dsh-share-err" style={{ padding: '4px 10px', fontSize: 12 }}>{CSRF_HINT}</div>}
           {!local && <RemoteTip mount={`/dsh-coshare/peer/${deviceId}/`} />}
           <iframe key={src} className="dsh-share-frame" src={src} title={name} allow="clipboard-read; clipboard-write" />
         </>
