@@ -5,10 +5,19 @@
 import os from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Duplex } from 'node:stream';
 import Schema from '@deepseek-ai/schemastery';
 import { ShareStore, type DeviceKeys, type SecretBackend } from './store.js';
 import { UpstreamAuth } from './upstream.js';
-import { ShareService } from './service.js';
+import { ShareService, PEER_PREFIX } from './service.js';
+
+/** 宿主前端用到的 WebSocket 路径（宿主 upgrade 只支持精确路径，子路径挂载要逐个注册）。 */
+const PEER_WS_PATHS = [
+  '/api/events.mux', '/api/events.host', '/api/remote.mux',
+  // dsh-better-sidebar
+  '/sidebar/ws/terminal', '/sidebar/ws/agent-opens', '/sidebar/ws/agent-terminals', '/sidebar/ws/fs-watch', '/sidebar/ws/sidechat',
+];
+const PEER_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export const name = 'dsh-coshare';
 export const inject = ['credentials', 'webServer', 'connection'] as const;
@@ -45,6 +54,7 @@ export interface HostCtx {
   webServer: {
     register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void;
     getOrigin(): string;
+    registerUpgrade(route: { path: string; handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void> }): () => void;
   };
   connection: {
     requestRejection(req: { headers: IncomingMessage['headers'] }): 401 | 403 | undefined;
@@ -205,7 +215,79 @@ export async function apply(ctx: HostCtx, config: ShareConfig): Promise<void> {
     },
   });
 
+  // 子路径挂载：B 主端口 /dsh-coshare/peer/<id>/… → 对方设备（手机经 dsh-mobile 访问时用，不暴露 127 端口）
+  const disposePeer = ctx.webServer.register({
+    kind: 'prefix',
+    path: PEER_PREFIX,
+    handler: async (req, res) => {
+      const rejection = ctx.connection.requestRejection(req);
+      if (rejection !== undefined) {
+        res.statusCode = rejection;
+        res.end();
+        return;
+      }
+      const url = req.url ?? '/';
+      const rest = url.slice(PEER_PREFIX.length + 1); // <id>/…
+      const slash = rest.indexOf('/');
+      const id = slash < 0 ? rest.split('?')[0]! : rest.slice(0, slash);
+      if (!PEER_ID_RE.test(id) || !svc.outgoingIds().includes(id)) {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('dsh-coshare: 未配对的设备。');
+        return;
+      }
+      if (slash < 0) {
+        // 必须带结尾斜杠，页面里的相对地址（<base href="./">）才能落到前缀下
+        const q = url.indexOf('?');
+        res.writeHead(308, { location: `${PEER_PREFIX}/${id}/${q < 0 ? '' : url.slice(q)}` }).end();
+        return;
+      }
+      try {
+        const h = await svc.proxyFor(id);
+        h.serve(req, res, rest.slice(slash));
+      } catch (e) {
+        if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(`dsh-coshare: ${(e as Error).message}`);
+      }
+    },
+  });
+  const wsRoutes = new Map<string, () => void>();
+  const syncWs = (): void => {
+    const want = new Set<string>();
+    for (const id of svc.outgoingIds()) {
+      if (!PEER_ID_RE.test(id)) continue;
+      for (const p of PEER_WS_PATHS) want.add(`${PEER_PREFIX}/${id}${p}`);
+    }
+    for (const [p, dispose] of wsRoutes) if (!want.has(p)) { dispose(); wsRoutes.delete(p); }
+    for (const p of want) {
+      if (wsRoutes.has(p)) continue;
+      const id = p.slice(PEER_PREFIX.length + 1).split('/')[0]!;
+      const aPath = p.slice(PEER_PREFIX.length + 1 + id.length);
+      try {
+        wsRoutes.set(p, ctx.webServer.registerUpgrade({
+          path: p,
+          handler: async (req, socket, head) => {
+            if (ctx.connection.requestRejection(req) !== undefined) {
+              socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n');
+              return;
+            }
+            const q = (req.url ?? '').indexOf('?');
+            const h = await svc.proxyFor(id);
+            h.upgrade(req, socket, head, aPath + (q < 0 ? '' : (req.url ?? '').slice(q)));
+          },
+        }));
+      } catch (e) {
+        ctx.logger?.warn?.(`[dsh-coshare] ws ${p}: ${(e as Error).message}`);
+      }
+    }
+  };
+  syncWs();
+  const wsTimer = setInterval(syncWs, 3000);
+  wsTimer.unref();
+
   ctx.effect(() => async () => {
+    clearInterval(wsTimer);
+    for (const d of wsRoutes.values()) d();
+    wsRoutes.clear();
+    disposePeer();
     disposeRoute();
     await svc.stop();
   }, 'dsh-coshare: runtime');

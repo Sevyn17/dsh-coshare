@@ -25,6 +25,9 @@ export interface ProxyHandle {
   port: number;
   /** 签发一次性进入票据（60 秒内有效）。 */
   ticket(): string;
+  /** 子路径挂载（B 主端口 /dsh-coshare/peer/<id>/…）：调用方已鉴权，path 为去前缀后的 A 侧路径。 */
+  serve(req: http.IncomingMessage, res: http.ServerResponse, path: string): void;
+  upgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer, path: string): void;
   close(): Promise<void>;
 }
 
@@ -39,6 +42,12 @@ function eq(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** 原始 URL 去掉 A 侧 path 后剩下的就是挂载前缀。 */
+function mountOf(req: http.IncomingMessage, path: string): string {
+  const url = req.url ?? '/';
+  return url.endsWith(path) ? url.slice(0, url.length - path.length) : '';
 }
 
 export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: string) => void }): Promise<ProxyHandle> {
@@ -82,7 +91,7 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
     res.end();
   };
 
-  const forward = (req: http.IncomingMessage, res: http.ServerResponse, idx: number): void => {
+  const forward = (req: http.IncomingMessage, res: http.ServerResponse, idx: number, path: string = req.url ?? '/', mount = ''): void => {
     const ep = endpoints[idx];
     const agent = agents[idx];
     if (ep === undefined || agent === undefined) {
@@ -92,9 +101,12 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
     }
     const headers = forwardRequestHeaders(req.headers, false);
     headers.host = `${ep.host}:${ep.port}`;
-    const up = https.request({ host: ep.host, port: ep.port, method: req.method, path: req.url, headers, agent }, (upRes) => {
+    const up = https.request({ host: ep.host, port: ep.port, method: req.method, path, headers, agent }, (upRes) => {
       preferred = idx;
-      res.writeHead(upRes.statusCode ?? 502, forwardResponseHeaders(upRes.headers, true));
+      const out = forwardResponseHeaders(upRes.headers, true);
+      // 子路径挂载：A 返回的绝对跳转（Location: /x）要加上挂载前缀
+      if (mount && typeof out.location === 'string' && out.location.startsWith('/') && !out.location.startsWith('//')) out.location = mount + out.location;
+      res.writeHead(upRes.statusCode ?? 502, out);
       upRes.pipe(res);
     });
     let sent = false;
@@ -103,7 +115,7 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
       // 连接阶段失败且请求体还没开始发：换下一个地址（只对无请求体的方法重试）
       const idempotent = req.method === 'GET' || req.method === 'HEAD';
       if (!sent && idempotent && !res.headersSent && idx + 1 < endpoints.length) {
-        forward(req, res, idx + 1);
+        forward(req, res, idx + 1, path, mount);
         return;
       }
       log(`proxy ${target.deviceId} → ${ep.host}:${ep.port}: ${e.message}`);
@@ -131,11 +143,7 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
     forward(req, res, preferred);
   });
 
-  server.on('upgrade', (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
-    if (!authed(req)) {
-      socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      return;
-    }
+  const pipeUpgrade = (req: http.IncomingMessage, socket: Duplex, head: Buffer, path: string): void => {
     const ep = endpoints[preferred];
     if (ep === undefined) {
       socket.destroy();
@@ -144,7 +152,7 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
     const headers = forwardRequestHeaders(req.headers, true);
     headers.host = `${ep.host}:${ep.port}`;
     const up = tls.connect({ ...clientPsk(target.identity, target.key), host: ep.host, port: ep.port }, () => {
-      up.write(rawRequestHead(req.method ?? 'GET', req.url ?? '/', headers));
+      up.write(rawRequestHead(req.method ?? 'GET', path, headers));
       if (head.length > 0) up.write(head);
       up.pipe(socket);
       socket.pipe(up);
@@ -161,6 +169,14 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
     socket.on('error', kill);
     up.on('close', kill);
     socket.on('close', kill);
+  };
+
+  server.on('upgrade', (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
+    if (!authed(req)) {
+      socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      return;
+    }
+    pipeUpgrade(req, socket, head, req.url ?? '/');
   });
 
   const listen = (port: number): Promise<void> =>
@@ -190,6 +206,8 @@ export function startProxy(opts: { target: ProxyTarget; port: number; log: (m: s
         tickets.set(t, now + TICKET_TTL_MS);
         return t;
       },
+      serve: (req, res, path) => forward(req, res, preferred, path, mountOf(req, path)),
+      upgrade: (req, socket, head, path) => pipeUpgrade(req, socket, head, path),
       close: () =>
         new Promise<void>((r) => {
           for (const s of live) s.destroy();

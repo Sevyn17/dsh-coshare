@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 重部署测试实例（仅按监听端口的 PID 杀，绝不按进程名）：scripts/redeploy.sh a|b|both
 set -u
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && (pwd -W 2>/dev/null || pwd))"  # Windows 下用 C:/… 形式，pnpm 认不得 /c/…
 DSH="${DSH:-dsh}"
 cd "$REPO"
 deploy() {

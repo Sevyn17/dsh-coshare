@@ -65,6 +65,9 @@ export interface PairAttempt {
   deviceId?: string;
 }
 
+/** B 主端口上挂载对方设备的子路径前缀：/dsh-coshare/peer/<deviceId>/… */
+export const PEER_PREFIX = '/dsh-coshare/peer';
+
 const PAIR_POLL_MS = 1500;
 const REQUEST_TTL_MS = 10 * 60_000;
 
@@ -409,7 +412,18 @@ export class ShareService {
   }
 
   /** 打开设备：确保本机代理，返回一次性进入地址。 */
-  async open(deviceId: string): Promise<{ url: string; port: number }> {
+  async open(deviceId: string): Promise<{ url: string; port: number; mount: string }> {
+    const h = await this.proxyFor(deviceId);
+    return { url: `http://127.0.0.1:${h.port}${CONTROL_PREFIX}enter?t=${h.ticket()}`, port: h.port, mount: `${PEER_PREFIX}/${deviceId}/` };
+  }
+
+  /** 已配对设备的 id 列表（子路径 WS 精确注册用）。 */
+  outgoingIds(): string[] {
+    return this.store.state.outgoing.map((d) => d.deviceId);
+  }
+
+  /** 确保某设备的本机代理已启动并返回句柄。 */
+  async proxyFor(deviceId: string): Promise<ProxyHandle> {
     const dev = this.store.state.outgoing.find((d) => d.deviceId === deviceId);
     const key = this.store.keys.outgoing[deviceId];
     if (!dev || key === undefined) throw new Error('NOT_FOUND');
@@ -428,7 +442,7 @@ export class ShareService {
       dev.proxyPort = h.port;
       this.store.save();
     }
-    return { url: `http://127.0.0.1:${h.port}${CONTROL_PREFIX}enter?t=${h.ticket()}`, port: h.port };
+    return h;
   }
 
   snapshot(): unknown {

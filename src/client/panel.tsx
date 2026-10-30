@@ -14,7 +14,10 @@ export function isLocalPage(): boolean {
   if (location.protocol === 'dsh-app:') return true;
   return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(location.hostname);
 }
-const REMOTE_NOTICE = '当前页面不是在本机打开的（例如手机经 dsh-mobile 访问），暂不支持访问其他设备，请在这台电脑上打开。配对管理仍可使用。';
+/** 非本机访问（手机经 dsh-mobile）时的提示：对方页面的实时通道要先在 dsh-mobile 里放行。 */
+export function remoteNotice(mount: string): string {
+  return `正在经本机主端口访问对方设备（如手机经 dsh-mobile）。若页面不更新，请在电脑上的 dsh-mobile「WebSocket 路径」里放行：${mount}api/remote.mux 和 ${mount}sidebar/ws/agent-opens。`;
+}
 
 function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; name: string; nonce: number; visible: boolean }): React.JSX.Element {
   const [src, setSrc] = useState<string | undefined>(undefined);
@@ -22,12 +25,12 @@ function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; nam
   const [retry, setRetry] = useState(0);
   const local = isLocalPage();
   useEffect(() => {
-    if (!local) return;
     let alive = true;
     setSrc(undefined);
     setErr('');
-    shareCall<{ url: string; port: number }>('outgoing.open', { deviceId }).then(
-      (r) => alive && setSrc(r.url),
+    shareCall<{ url: string; port: number; mount: string }>('outgoing.open', { deviceId }).then(
+      // 本机：走 127 代理端口；非本机（手机经 dsh-mobile）：走本机主端口子路径，相对地址随页面同源
+      (r) => alive && setSrc(local ? r.url : `${r.mount.slice(1)}?n=${nonce}`),
       (e) => alive && setErr(errorText(e)),
     );
     return () => {
@@ -36,11 +39,7 @@ function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; nam
   }, [deviceId, nonce, retry, local]);
   return (
     <div className="dsh-share-slot" style={visible ? undefined : { display: 'none' }}>
-      {!local ? (
-        <div className="dsh-share-center">
-          <div className="dsh-share-hint">{REMOTE_NOTICE}</div>
-        </div>
-      ) : err ? (
+      {err ? (
         <div className="dsh-share-center">
           <div className="dsh-share-err">连接「{name}」失败：{err}</div>
           <button className="dsh-share-btn" onClick={() => setRetry((n) => n + 1)}>
@@ -48,7 +47,14 @@ function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; nam
           </button>
         </div>
       ) : src ? (
-        <iframe key={src} className="dsh-share-frame" src={src} title={name} allow="clipboard-read; clipboard-write" />
+        <>
+          {!local && (
+            <div className="dsh-share-hint" style={{ padding: '4px 10px', fontSize: 12 }}>
+              {remoteNotice(`/dsh-coshare/peer/${deviceId}/`)}
+            </div>
+          )}
+          <iframe key={src} className="dsh-share-frame" src={src} title={name} allow="clipboard-read; clipboard-write" />
+        </>
       ) : (
         <div className="dsh-share-center">正在连接「{name}」…</div>
       )}
@@ -131,13 +137,10 @@ export function SharePanel(): React.JSX.Element {
 
   const openWindow = (): void => {
     if (!current) return;
-    if (!isLocalPage()) {
-      setErr(REMOTE_NOTICE);
-      return;
-    }
     setErr('');
-    void shareCall<{ url: string }>('outgoing.open', { deviceId: current }).then(
-      (r) => window.open(r.url, '_blank', 'noopener'),
+    const local = isLocalPage();
+    void shareCall<{ url: string; mount: string }>('outgoing.open', { deviceId: current }).then(
+      (r) => window.open(local ? r.url : new URL(r.mount.slice(1), document.baseURI).href, '_blank', 'noopener'),
       (e) => setErr(errorText(e)),
     );
   };
