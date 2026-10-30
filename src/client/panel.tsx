@@ -16,7 +16,7 @@ export function isLocalPage(): boolean {
 }
 /** 非本机访问（手机经 dsh-mobile）时的提示：对方页面的实时通道要先在 dsh-mobile 里放行。 */
 export function remoteNotice(mount: string): string {
-  return `正在经本机主端口访问对方设备（如手机经 dsh-mobile）。若页面不更新，请在电脑上的 dsh-mobile「WebSocket 路径」里放行：${mount}api/remote.mux 和 ${mount}sidebar/ws/agent-opens。`;
+  return `正在经电脑主端口访问对方设备（如手机经 dsh-mobile）。若页面打开后不实时更新：在电脑上打开 dsh-mobile「诊断」页，在「第三方 WebSocket 路径」里点「全部允许」，然后刷新本页。也可展开「手动添加路径（高级）」照抄这两条（已是本设备的完整路径）：${mount}api/remote.mux 和 ${mount}sidebar/ws/agent-opens。`;
 }
 
 function DeviceFrame({ deviceId, name, nonce, visible }: { deviceId: string; name: string; nonce: number; visible: boolean }): React.JSX.Element {
